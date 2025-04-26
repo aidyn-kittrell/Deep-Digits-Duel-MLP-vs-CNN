@@ -3,12 +3,14 @@ import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
+# ===================== Utility Functions ===================== #
 def sigmoid(x):  # manually define the sigmoid
     
 
 def softmax(x):  # define the softmax 
     
 
+# ===================== Data Loading ===================== #
 def dataloader(train_dataset, test_dataset, batch_size=128):
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
@@ -22,6 +24,7 @@ def load_data():
     print("The number of testing data:", len(test_dataset))
     return dataloader(train_dataset, test_dataset)
 
+# ===================== CNN Structure ===================== #
 class MLP:
     def __init__(self, input_size, hidden_size, output_size,lr):  # 
         
@@ -48,6 +51,7 @@ class MLP:
 
         return loss
 
+# ===================== Training Process ===================== #
 def main():
     # First, load data
     train_loader, test_loader = load_data()

@@ -4,13 +4,11 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
 # ===================== Utility Functions ===================== #
-
 def relu(x):
     
 
 def softmax(x):
     
-
 
 # ===================== Data Loading ===================== #
 def dataloader(train_dataset, test_dataset, batch_size=64):
