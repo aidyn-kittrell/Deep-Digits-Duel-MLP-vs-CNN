@@ -2,6 +2,9 @@
 > This project showcases the manual implementations of MLP and CNN models
 
 ## Table of Contents
+- [Installation](#installation)
+- [Usage](#usage)
+- [License](#license)
 
 ## Installation
 1. Clone the repository
@@ -42,5 +45,4 @@ python CNN-team-2.py
 ```
 
 ## License
-Distributed under the MIT License.
-See LICENSE for more information.
+Distributed under the [MIT License](https://choosealicense.com/licenses/mit/).
