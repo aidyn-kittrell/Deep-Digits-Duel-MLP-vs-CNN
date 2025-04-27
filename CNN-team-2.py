@@ -4,15 +4,19 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
 # ===================== Utility Functions ===================== #
+
 def relu(x):
+    """ ReLU activation function """
     return np.maximum(0, x)
 
 def softmax(x):
-    e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-    return e_x / e_x.sum(axis=1, keepdims=True)
+    """ Softmax activation function """
+    e_x = np.exp(x - np.max(x, axis=1, keepdims=True)) # Subtract max for numerical stability
+    return e_x / np.sum(e_x, axis=1, keepdims=True)
+
 
 # ===================== Data Loading ===================== #
-def dataloader(train_dataset, test_dataset, batch_size=64):
+def dataloader(train_dataset, test_dataset, batch_size=128):
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
     return train_loader, test_loader
@@ -28,127 +32,107 @@ def load_data():
 # ===================== CNN Structure ===================== #
 class CNN:
     def __init__(self, input_size, num_filters, kernel_size, fc_output_size, lr):
+        self.input_size = input_size
+        self.num_filters = num_filters
         self.kernel_size = kernel_size
+        self.fc_output_size = fc_output_size
         self.lr = lr
-        self.weight_decay = 5e-4 # L2 regularization
 
-        # Adam parameters
-        self.beta1 = 0.9
-        self.beta2 = 0.999
-        self.eps = 1e-8
-        self.t = 1
+        # Calculate and store the convolutional output size
+        self.conv_output_size = input_size - kernel_size + 1 # No padding
 
-        # Intialize convolution kernel & bias
-        self.conv_kernel = np.random.randn(kernel_size, kernel_size) * np.sqrt(2.0 / (kernel_size ** 2)) # He initialization
-        self.conv_bias = 0.0  # Convolution layer bias
+        # Initialize convolutional kernel weights and biases
+        self.conv_kernels = np.random.randn(num_filters, kernel_size, kernel_size) * 0.01
+        self.conv_biases = np.zeros(num_filters)
 
-        # Adam states for convolution
-        self.m_conv = np.zeros_like(self.conv_kernel)
-        self.v_conv = np.zeros_like(self.conv_kernel)
-        self.m_conv_bias = 0.0
-        self.v_conv_bias = 0.0
+        # Initialize fully connected layer weights and biases
+        self.fc_weights = np.random.randn(num_filters * self.conv_output_size * self.conv_output_size, fc_output_size) * 0.01
+        self.fc_biases = np.zeros(fc_output_size)
 
-        # Fully connected layer parameters
-        fc_input_size = (input_size - kernel_size + 1) ** 2 * num_filters
-        self.W = np.random.randn(fc_input_size, fc_output_size) * np.sqrt(2.0 / fc_input_size) # He initialization
-        self.b = np.zeros(fc_output_size)
+    def convolve2d(self, x, kernel):
+        """Perform a 2D convolution operation."""
+        h, w = x.shape
+        kh, kw = kernel.shape
+        output_h = h - kh + 1
+        output_w = w - kw + 1
+        output = np.zeros((output_h, output_w))
 
-        # Adam states for FC
-        self.m_W = np.zeros_like(self.W)
-        self.v_W = np.zeros_like(self.W)
-        self.m_b = np.zeros_like(self.b)
-        self.v_b = np.zeros_like(self.b)
+        for i in range(output_h):
+            for j in range(output_w):
+                region = x[i:i+kh, j:j+kw]
+                output[i, j] = np.sum(region * kernel)
+        return output
 
     def forward(self, x):
         """ Forward propagation """
         batch_size = x.shape[0]
-        output_size = 28 - self.kernel_size + 1
-        conv_output = np.zeros((batch_size, output_size, output_size))
+        conv_output_size = self.input_size - self.kernel_size + 1
 
-        # Convolution operation
-        for i in range(output_size):
-            for j in range(output_size):
-                conv_output[:, i, j] = np.sum(x[:, i:i+self.kernel_size, j:j+self.kernel_size] * self.conv_kernel, axis=(1,2)) + self.conv_bias
+        # Convolutional layer
+        self.conv_outputs = np.zeros((batch_size, self.num_filters, conv_output_size, conv_output_size)) # store as an attribute
+        for b in range(batch_size):
+            for f in range(self.num_filters):
+                # Extract the 2D image from the 3D tensor (assuming single channel)
+                self.conv_outputs[b, f] = self.convolve2d(x[b, 0], self.conv_kernels[f]) + self.conv_biases[f]
 
-        # ReLU activation
-        conv_output = relu(conv_output)
+        # Apply ReLU activation
+        self.conv_outputs = relu(self.conv_outputs)
 
-        # Flatten for fully connected layer
-        self.flattened = conv_output.reshape(batch_size, -1)
+        # Flatten the output for the fully connected layer
+        self.flattened = self.conv_outputs.reshape(batch_size, -1) # store as an attribute
 
         # Fully connected layer
-        logits = np.dot(self.flattened, self.W) + self.b
+        fc_outputs = np.dot(self.flattened, self.fc_weights) + self.fc_biases
 
-        # Softmax activation
-        outputs = softmax(logits)
+        # Apply Softmax activation
+        outputs = softmax(fc_outputs)
 
         return outputs
 
     def backward(self, x, y, pred):
         """ Backward propagation """
         batch_size = x.shape[0]
-        output_size = 28 - self.kernel_size + 1
 
         # 1. one-hot encode the labels
-        smoothing = 0.1 # Label smoothing
-        one_hot_y = np.eye(10)[y] * (1 - smoothing) + smoothing / 10
-        
+        y_one_hot = np.zeros((batch_size, self.fc_output_size))
+        y_one_hot[np.arange(batch_size), y] = 1
+
         # 2. Calculate softmax cross-entropy loss gradient
-        grad_loss = (pred - one_hot_y) / batch_size
+        dL_dfc_outputs = (pred - y_one_hot) / batch_size # gradient of loss w.r.t. softmax output
         
         # 3. Calculate fully connected layer gradient
-        grad_W = np.dot(self.flattened.T, grad_loss) + self.weight_decay * self.W
-        grad_b = np.sum(grad_loss, axis=0)
+        dL_dfc_weights = np.dot(self.flattened.T, dL_dfc_outputs) # gradient of loss w.r.t. fc weights
+        dL_dfc_biases = np.sum(dL_dfc_outputs, axis=0) # gradient of loss w.r.t. fc biases
+        dL_dflattened = np.dot(dL_dfc_outputs, self.fc_weights.T) # gradient of loss w.r.t. flattened input
         
         # 4. Backpropagate through ReLU
-        grad_conv = np.dot(grad_loss, self.W.T) * (self.flattened > 0)
-        grad_conv = grad_conv.reshape(batch_size, output_size, output_size)
-        grad_conv_bias = np.sum(grad_conv) / batch_size
+        dL_dconv_outputs = dL_dflattened.reshape(batch_size, self.num_filters, self.conv_output_size, self.conv_output_size)
+        dL_dconv_outputs[self.conv_outputs <= 0] = 0 # gradient of loss w.r.t. conv outputs (ReLU)
         
         # 5. Calculate convolution kernel gradient
-        grad_kernel = np.zeros_like(self.conv_kernel)
-        for i in range(self.kernel_size):
-            for j in range(self.kernel_size):
-                grad_kernel[i, j] = np.sum(x[:, i:i+output_size, j:j+output_size] * grad_conv) / batch_size
-        grad_kernel += self.weight_decay * self.conv_kernel
+        dL_dconv_kernels = np.zeros_like(self.conv_kernels)
+        dL_dconv_biases = np.sum(dL_dconv_outputs, axis=(0, 2, 3)) # gradient of loss w.r.t. conv biases
+
+        for b in range(batch_size):
+            for f in range(self.num_filters):
+                for i in range(self.conv_output_size):
+                    for j in range(self.conv_output_size):
+                        # Extract the correct 2D region from the input
+                        region = x[b, 0, i:i+self.kernel_size, j:j+self.kernel_size] # index the first channel
+                        dL_dconv_kernels[f] += dL_dconv_outputs[b, f, i, j] * region
         
         # 6. Update parameters
-        # Adam updates for convolution kernel
-        self.m_conv = self.beta1*self.m_conv + (1-self.beta1)*grad_kernel
-        self.v_conv = self.beta2*self.v_conv + (1-self.beta2)*(grad_kernel**2)
-        m_hat_conv = self.m_conv / (1 - self.beta1**self.t)
-        v_hat_conv = self.v_conv / (1 - self.beta2**self.t)
-        self.conv_kernel -= self.lr * m_hat_conv / (np.sqrt(v_hat_conv) + self.eps)
-        
-        # Adam updates for conv bias
-        self.m_conv_bias = self.beta1*self.m_conv_bias + (1-self.beta1)*grad_conv_bias
-        self.v_conv_bias = self.beta2*self.v_conv_bias + (1-self.beta2)*(grad_conv_bias**2)
-        m_hat_bias = self.m_conv_bias / (1 - self.beta1**self.t)
-        v_hat_bias = self.v_conv_bias / (1 - self.beta2**self.t)
-        self.conv_bias -= self.lr * m_hat_bias / (np.sqrt(v_hat_bias) + self.eps)
-        
-        # Adam updates for FC weights
-        self.m_W = self.beta1*self.m_W + (1-self.beta1)*grad_W
-        self.v_W = self.beta2*self.v_W + (1-self.beta2)*(grad_W**2)
-        m_hat_W = self.m_W / (1 - self.beta1**self.t)
-        v_hat_W = self.v_W / (1 - self.beta2**self.t)
-        self.W -= self.lr * m_hat_W / (np.sqrt(v_hat_W) + self.eps)
-        
-        # Adam updates for FC bias
-        self.m_b = self.beta1*self.m_b + (1-self.beta1)*grad_b
-        self.v_b = self.beta2*self.v_b + (1-self.beta2)*(grad_b**2)
-        m_hat_b = self.m_b / (1 - self.beta1**self.t)
-        v_hat_b = self.v_b / (1 - self.beta2**self.t)
-        self.b -= self.lr * m_hat_b / (np.sqrt(v_hat_b) + self.eps)
-        
-        self.t += 1
+        self.fc_weights -= self.lr * dL_dfc_weights
+        self.fc_biases -= self.lr * dL_dfc_biases
+        self.conv_kernels -= self.lr * dL_dconv_kernels
+        self.conv_biases -= self.lr * dL_dconv_biases
 
     def train(self, x, y):
         # call forward function
         pred = self.forward(x)
         
         # calculate loss
-        loss = -np.sum(np.log(pred[np.arange(len(y)), y] + 1e-8)) / len(y)
+        loss = -np.sum(np.log(pred[np.arange(len(y)), y])) / len(y)
         
         # call backward function
         self.backward(x, y, pred)
@@ -161,21 +145,27 @@ def main():
     train_loader, test_loader = load_data()
 
     # Second, define hyperparameters
-    input_size = 28
-    num_filters = 1
-    num_epochs = 5 # max 5 epochs and max 469 iterations per epoch (don't change)
-    kernel_size = 8
-    lr = 0.001
+    input_size = 28 # MNIST image size (28x28) (don't change)
+    num_epochs = 5 # defined max number of epochs (don't change)
+    fc_output_size = 10 # number of classes (0-9) (don't change)
+    num_filters = 1 # number of filters in the convolutional layer (1 filter = 1 kernel) (don't change)
     
-    model = CNN(input_size, num_filters, kernel_size=kernel_size, fc_output_size=10, lr=lr)
+    kernel_size = 3 # kernel size (nxn)
+    lr = 0.01 # learning rate
+
+    # Third, initialize the model
+    model = CNN(input_size=input_size, num_filters=num_filters, kernel_size=kernel_size, fc_output_size=fc_output_size, lr=lr)
 
     # Then, train the model
     for epoch in range(num_epochs):
         total_loss = 0
 
-        for inputs, labels in train_loader:  # define training phase for training model
-            x = inputs.numpy().squeeze(1) # remove the channel dimension
+        for inputs, labels in train_loader: # define training phase for training model
+            # Convert inputs and labels to numpy arrays
+            x = inputs.numpy()
             y = labels.numpy()
+
+            # Train the model on the current batch
             loss = model.train(x, y)
             total_loss += loss
 
@@ -185,10 +175,15 @@ def main():
     correct_pred = 0
     total_pred = 0
     for inputs, labels in test_loader:
-        x = inputs.numpy().squeeze(1)  # keep original image dimensions
+        # Convert inputs and labels to numpy arrays
+        x = inputs.numpy()
         y = labels.numpy()
-        pred = model.forward(x)  # the model refers to the model that was trained during the raining phase
-        predicted_labels = np.argmax(pred, 1)
+
+        # Perform forward pass to get predictions
+        pred = model.forward(x) # the model refers to the model that was trained during the training phase
+        predicted_labels = np.argmax(pred, axis=1)
+
+        # Calculate accuracy
         correct_pred += np.sum(predicted_labels == y)
         total_pred += len(labels)
     print(f"Test Accuracy: {correct_pred/total_pred*100:.2f}%")
