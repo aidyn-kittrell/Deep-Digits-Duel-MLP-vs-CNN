@@ -8,15 +8,8 @@ def sigmoid(x):  # manually define the sigmoid
     return 1 / (1 + np.exp(-x))
 
 def softmax(x):  # define the softmax 
-    x_shift = x - np.max(x, axis=1, keepdims=True)
-    exp_x = np.exp(x_shift)
-    return exp_x / np.sum(exp_x, axis=1, keepdims=True)
-
-def cross_entropy_loss(probs, labels):
-    batch_size = labels.shape[0]
-    clipped = np.clip(probs, 1e-12, 1.0)
-    log_likelihood = -np.log(clipped[np.arange(batch_size), labels])
-    return np.mean(log_likelihood)
+    e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+    return e_x / e_x.sum(axis=1, keepdims=True)
 
 # ===================== Data Loading ===================== #
 def dataloader(train_dataset, test_dataset, batch_size=128):
@@ -76,7 +69,7 @@ class MLP:
         # call forward function
         pred = self.forward(x)
         # calculate loss
-        loss = cross_entropy_loss(pred, y)
+        loss = -np.sum(np.log(pred[np.arange(len(y)), y] + 1e-8)) / len(y)
         # call backward function
         self.backward(x, y, pred)
         return loss
