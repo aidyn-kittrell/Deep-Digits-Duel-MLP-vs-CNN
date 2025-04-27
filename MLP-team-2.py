@@ -37,10 +37,8 @@ class MLP:
     def forward(self, x):  # forward propagation to get predictions
         self.Z1 = x.dot(self.W1) + self.B1
         self.A1 = sigmoid(self.Z1)
-
         self.Z2 = self.A1.dot(self.W2) + self.B2
-        outputs = softmax(self.Z2)
-        return outputs
+        return softmax(self.Z2)
     
     def backward(self, x, y, pred):
         # one-hot encode the labels
