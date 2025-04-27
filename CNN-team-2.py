@@ -30,15 +30,34 @@ class CNN:
     def __init__(self, input_size, num_filters, kernel_size, fc_output_size, lr):
         self.kernel_size = kernel_size
         self.lr = lr
+        self.weight_decay = 5e-4 # L2 regularization
 
-        # Intialize convolution kernel (3x3)
-        self.conv_kernel = np.random.randn(kernel_size, kernel_size) * 0.1
-        self.conv_bias = np.zeros(1)
+        # Adam parameters
+        self.beta1 = 0.9
+        self.beta2 = 0.999
+        self.eps = 1e-8
+        self.t = 1
+
+        # Intialize convolution kernel & bias
+        self.conv_kernel = np.random.randn(kernel_size, kernel_size) * np.sqrt(2.0 / (kernel_size ** 2)) # He initialization
+        self.conv_bias = 0.0  # Convolution layer bias
+
+        # Adam states for convolution
+        self.m_conv = np.zeros_like(self.conv_kernel)
+        self.v_conv = np.zeros_like(self.conv_kernel)
+        self.m_conv_bias = 0.0
+        self.v_conv_bias = 0.0
 
         # Fully connected layer parameters
         fc_input_size = (input_size - kernel_size + 1) ** 2 * num_filters
-        self.W = np.random.randn(fc_input_size, fc_output_size) * 0.1
+        self.W = np.random.randn(fc_input_size, fc_output_size) * np.sqrt(2.0 / fc_input_size) # He initialization
         self.b = np.zeros(fc_output_size)
+
+        # Adam states for FC
+        self.m_W = np.zeros_like(self.W)
+        self.v_W = np.zeros_like(self.W)
+        self.m_b = np.zeros_like(self.b)
+        self.v_b = np.zeros_like(self.b)
 
     def forward(self, x):
         """ Forward propagation """
@@ -71,36 +90,65 @@ class CNN:
         output_size = 28 - self.kernel_size + 1
 
         # 1. one-hot encode the labels
-        one_hot_y = np.eye(10)[y]
+        smoothing = 0.1 # Label smoothing
+        one_hot_y = np.eye(10)[y] * (1 - smoothing) + smoothing / 10
         
         # 2. Calculate softmax cross-entropy loss gradient
         grad_loss = (pred - one_hot_y) / batch_size
         
         # 3. Calculate fully connected layer gradient
-        grad_W = np.dot(self.flattened.T, grad_loss)
+        grad_W = np.dot(self.flattened.T, grad_loss) + self.weight_decay * self.W
         grad_b = np.sum(grad_loss, axis=0)
         
         # 4. Backpropagate through ReLU
         grad_conv = np.dot(grad_loss, self.W.T) * (self.flattened > 0)
         grad_conv = grad_conv.reshape(batch_size, output_size, output_size)
+        grad_conv_bias = np.sum(grad_conv) / batch_size
         
         # 5. Calculate convolution kernel gradient
         grad_kernel = np.zeros_like(self.conv_kernel)
         for i in range(self.kernel_size):
             for j in range(self.kernel_size):
                 grad_kernel[i, j] = np.sum(x[:, i:i+output_size, j:j+output_size] * grad_conv) / batch_size
+        grad_kernel += self.weight_decay * self.conv_kernel
         
         # 6. Update parameters
-        self.W -= self.lr * grad_W
-        self.b -= self.lr * grad_b
-        self.conv_kernel -= self.lr * grad_kernel
+        # Adam updates for convolution kernel
+        self.m_conv = self.beta1*self.m_conv + (1-self.beta1)*grad_kernel
+        self.v_conv = self.beta2*self.v_conv + (1-self.beta2)*(grad_kernel**2)
+        m_hat_conv = self.m_conv / (1 - self.beta1**self.t)
+        v_hat_conv = self.v_conv / (1 - self.beta2**self.t)
+        self.conv_kernel -= self.lr * m_hat_conv / (np.sqrt(v_hat_conv) + self.eps)
+        
+        # Adam updates for conv bias
+        self.m_conv_bias = self.beta1*self.m_conv_bias + (1-self.beta1)*grad_conv_bias
+        self.v_conv_bias = self.beta2*self.v_conv_bias + (1-self.beta2)*(grad_conv_bias**2)
+        m_hat_bias = self.m_conv_bias / (1 - self.beta1**self.t)
+        v_hat_bias = self.v_conv_bias / (1 - self.beta2**self.t)
+        self.conv_bias -= self.lr * m_hat_bias / (np.sqrt(v_hat_bias) + self.eps)
+        
+        # Adam updates for FC weights
+        self.m_W = self.beta1*self.m_W + (1-self.beta1)*grad_W
+        self.v_W = self.beta2*self.v_W + (1-self.beta2)*(grad_W**2)
+        m_hat_W = self.m_W / (1 - self.beta1**self.t)
+        v_hat_W = self.v_W / (1 - self.beta2**self.t)
+        self.W -= self.lr * m_hat_W / (np.sqrt(v_hat_W) + self.eps)
+        
+        # Adam updates for FC bias
+        self.m_b = self.beta1*self.m_b + (1-self.beta1)*grad_b
+        self.v_b = self.beta2*self.v_b + (1-self.beta2)*(grad_b**2)
+        m_hat_b = self.m_b / (1 - self.beta1**self.t)
+        v_hat_b = self.v_b / (1 - self.beta2**self.t)
+        self.b -= self.lr * m_hat_b / (np.sqrt(v_hat_b) + self.eps)
+        
+        self.t += 1
 
     def train(self, x, y):
         # call forward function
         pred = self.forward(x)
         
         # calculate loss
-        loss = -np.sum(np.log(pred[np.arange(len(y)), y])) / len(y)
+        loss = -np.sum(np.log(pred[np.arange(len(y)), y] + 1e-8)) / len(y)
         
         # call backward function
         self.backward(x, y, pred)
@@ -115,9 +163,9 @@ def main():
     # Second, define hyperparameters
     input_size = 28
     num_filters = 1
-    num_epochs = 5
-    kernel_size = 3
-    lr = 0.01
+    num_epochs = 5 # max 5 epochs and max 469 iterations per epoch (don't change)
+    kernel_size = 8
+    lr = 0.001
     
     model = CNN(input_size, num_filters, kernel_size=kernel_size, fc_output_size=10, lr=lr)
 
