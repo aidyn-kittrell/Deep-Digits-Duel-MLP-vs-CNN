@@ -1,4 +1,4 @@
-# DeepDigits-Duel-MLP-vs-CNN
+# Deep-Digits-Duel-MLP-vs-CNN
 > This project showcases the manual implementations of MLP and CNN models
 
 ## Table of Contents
