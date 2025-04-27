@@ -66,7 +66,7 @@ class MLP:
     def train(self, x,y):
         # call forward function
         pred = self.forward(x)
-        # calculate loss
+        # manually calculate cross entorpy loss
         loss = -np.sum(np.log(pred[np.arange(len(y)), y] + 1e-8)) / len(y)
         # call backward function
         self.backward(x, y, pred)
