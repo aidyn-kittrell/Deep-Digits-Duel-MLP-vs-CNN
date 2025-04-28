@@ -23,7 +23,7 @@ source venv/bin/activate
 # Activate (Windows)
 venv\Scripts\activate
 ```
-3. Install dependencies
+3. Install dependencies (Use Python 3.9)
 ```
 # Linux/macOS
 pip3 install numpy torch torchvision
@@ -36,12 +36,12 @@ pip install numpy torch torchvision
 Run the project with:
 ```
 # Linux/macOS
-python3 MLP-team-2.py
-python3 CNN-team-2.py
+python3 MLP-2.py
+python3 CNN-2.py
 
 # Windows
-python MLP-team-2.py
-python CNN-team-2.py
+python MLP-2.py
+python CNN-2.py
 ```
 
 ## License
