@@ -132,7 +132,7 @@ class CNN:
         pred = self.forward(x)
         
         # calculate loss
-        loss = -np.sum(np.log(pred[np.arange(len(y)), y])) / len(y)
+        loss = -np.sum(np.log(pred[np.arange(len(y)), y])) / len(y) # cross-entropy loss function
         
         # call backward function
         self.backward(x, y, pred)
@@ -150,8 +150,8 @@ def main():
     fc_output_size = 10 # number of classes (0-9) (don't change)
     num_filters = 1 # number of filters in the convolutional layer (1 filter = 1 kernel) (don't change)
     
-    kernel_size = 3 # kernel size (nxn)
-    lr = 0.01 # learning rate
+    kernel_size = 5 # kernel size (nxn)
+    lr = 0.03 # learning rate
 
     # Third, initialize the model
     model = CNN(input_size=input_size, num_filters=num_filters, kernel_size=kernel_size, fc_output_size=fc_output_size, lr=lr)
