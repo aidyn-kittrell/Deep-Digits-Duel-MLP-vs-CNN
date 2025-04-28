@@ -38,7 +38,8 @@ class MLP:
         self.Z1 = x.dot(self.W1) + self.B1
         self.A1 = sigmoid(self.Z1)
         self.Z2 = self.A1.dot(self.W2) + self.B2
-        return softmax(self.Z2)
+        output = softmax(self.Z2)
+        return output
     
     def backward(self, x, y, pred):
         # one-hot encode the labels
